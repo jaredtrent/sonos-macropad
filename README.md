@@ -189,4 +189,6 @@ AI says it looks good. But AI also helped make it.
 Props to [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos communication.
 And to [sonos-vinyl](https://github.com/deichten/sonos-vinyl) for the great NFC reader project.
 
+This is a personal project and is not affiliated with or endorsed by Sonos, Inc.
+
 **Version:** 2026.1.8
