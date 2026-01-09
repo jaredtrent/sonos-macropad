@@ -125,7 +125,7 @@ api_port = 5005
 # Main room name from Sonos app
 primary_room = Living Room
 # Additional rooms for grouping, comma separated
-secondary_rooms = Kitchen,Dining Room, Bathroom  
+secondary_rooms = Kitchen,Dining Room,Bathroom  
 # Playlist name from Sonos favorites
 favorite_playlist = Discovery Weekly
 
