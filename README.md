@@ -1,6 +1,6 @@
 # Sonos Macropad Controller
 
-Add physical controls to your [sonos-vinyl](https://github.com/deichten/sonos-vinyl) setup using a DOIO KB03B macropad. Press keys to control playback, adjust volume, and manage multi-room audio.
+Add physical controls to your [vinylemulator](https://github.com/hankhank10/vinylemulator) setup using a DOIO KB03B macropad. Press keys to control playback, adjust volume, and manage multi-room audio.
 
 Essentially, sonos-macropad turns key presses into http requests to your sonos-http-api server. 
 
@@ -37,7 +37,7 @@ You have to map the following keys to your macropad ahead of time:
 
 ## Installation
 
-Follow these steps to get sonos-macropad running on your system. This guide assumes you've already installed sonos-http-api as part of a sonos-vinyl installation.
+Follow these steps to get sonos-macropad running on your system. This guide assumes you've already installed sonos-http-api as part of a vinylemulator installation.
 
 1. **Install dependencies:**
    ```bash
@@ -187,7 +187,7 @@ Entirely vibe coded, so, proceed with caution.
 AI says it looks good. But AI also helped make it. 
 
 Props to [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos communication.
-And to [sonos-vinyl](https://github.com/deichten/sonos-vinyl) for the great NFC reader project.
+And to [vinylemulator](https://github.com/hankhank10/vinylemulator) for the great NFC reader project.
 
 This is a personal project and is not affiliated with or endorsed by Sonos, Inc.
 

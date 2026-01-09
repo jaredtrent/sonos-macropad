@@ -50,7 +50,7 @@ sudo usermod -a -G input $USER
 
 ### 2. (Optional) Install Sonos HTTP API
 
-Set up the Sonos HTTP API server that sonos-macropad uses to communicate with your speakers, if you haven't already. Note that this is part of the sonos-vinyl setup process:
+Set up the Sonos HTTP API server that sonos-macropad uses to communicate with your speakers, if you haven't already. Note that if you've already set up vinylemulator, then you've already set up sonos-http-api as part of that process:
 
 ```bash
 # Install Node.js if not already installed
