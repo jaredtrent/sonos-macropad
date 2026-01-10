@@ -3,10 +3,11 @@
 ## [2026.1.9] - 2026-01-09
 
 ### Added
-- Added tests to help with development (dev-tools/*)
-- Improved security against malicious scripts
-- Added device name validation
+- Added tests to help with development (tools/*)
 - Added more startup validations (with helpful error messages)
+
+### Improved
+- Improved security against malicious scripts
 
 ### Fixed
 - Fixed an issue with error handling during device disconnects
