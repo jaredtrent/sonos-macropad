@@ -1,4 +1,26 @@
-.DS_Store
-**/.DS_Store
+# Python cache and compiled files
 __pycache__/
 *.pyc
+
+# macOS files
+.DS_Store
+**/.DS_Store
+
+# Test and coverage files
+.pytest_cache/
+.coverage
+htmlcov/
+dev-tools/.pytest_cache/
+
+# Generated log files
+*.log
+sonos-macropad.debug.log
+sonos-macropad.config-errors.log
+
+# Generated action scripts (created by sonos-macropad.py)
+playpause
+next
+volumeup
+volumedown
+favorite_playlist
+groups-and-volume

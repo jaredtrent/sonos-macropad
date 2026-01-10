@@ -1,0 +1,1 @@
+"""Unit tests for sonos-macropad project"""

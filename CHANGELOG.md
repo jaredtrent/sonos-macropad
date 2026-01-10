@@ -1,9 +1,15 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [2026.1.9] - 2026-01-09
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Calendar Versioning](https://calver.org/).
+### Added
+- Added tests to help with development (dev-tools/*)
+- Improved security against malicious scripts
+- Added device name validation
+- Added more startup validations (with helpful error messages)
+
+### Fixed
+- Fixed an issue with error handling during device disconnects
 
 ## [2026.1.8] - 2026-01-08
 

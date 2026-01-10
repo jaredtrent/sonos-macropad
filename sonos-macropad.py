@@ -142,7 +142,7 @@ automatic function tracing, --skip-validation bypasses specific validation check
 """
 
 # Release version format: YYYY-MM-DD-Description-Increment - used in logs and help output
-VERSION = "2026.1.8"
+VERSION = "2026.1.9"
 
 # Process --help first so it works even without dependencies - exits immediately if found
 if '--help' in sys.argv or '-h' in sys.argv:
@@ -306,7 +306,7 @@ try:
         print(len(primary_zone[0]['members']))
     else:
         print(0)
-except:
+except (json.JSONDecodeError, KeyError, IndexError):
     print(0)
 ")
     [ "$member_count" -eq 1 ] && return 0 || return 1
@@ -316,6 +316,21 @@ is_room_in_primary_zone() {{
     local room="$1"
     local zones=$(curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/zones")
     echo "$zones" | grep -q "\\"roomName\\":\\"$room\\""
+}}
+
+# Secure API request function - checks HTTP response codes
+api_request() {{
+    local url="$1"
+    local description="$2"
+    local response=$(curl -s -w "\\n%{{http_code}}" --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$url")
+    local http_code=$(echo "$response" | tail -n1)
+    
+    if [ "$http_code" = "200" ]; then
+        return 0  # Success
+    else
+        echo "$description (HTTP $http_code)" >&2
+        return 1  # Failure
+    fi
 }}
 
 get_volume() {{
@@ -333,13 +348,13 @@ volume_up() {{
             echo "KNOB ACTION SKIPPED - Volume up skipped on $PRIMARY_ROOM (already at maximum $PRIMARY_MAX)"
         else
             if [ "$current_primary" -ge $((PRIMARY_MAX - amount + 1)) ]; then
-                if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/$PRIMARY_MAX" > /dev/null; then
+                if api_request "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/$PRIMARY_MAX" "Volume up on $PRIMARY_ROOM"; then
                     echo "KNOB ACTION COMPLETE - Volume up on $PRIMARY_ROOM (set to maximum $PRIMARY_MAX)"
                 else
                     echo "KNOB ACTION FAILED - Volume up on $PRIMARY_ROOM (API error)"
                 fi
             else
-                if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/+$amount" > /dev/null; then
+                if api_request "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/+$amount" "Volume up on $PRIMARY_ROOM"; then
                     echo "KNOB ACTION COMPLETE - Volume up on $PRIMARY_ROOM (+$amount)"
                 else
                     echo "KNOB ACTION FAILED - Volume up on $PRIMARY_ROOM (API error)"
@@ -352,13 +367,13 @@ volume_up() {{
             echo "KNOB ACTION SKIPPED - Volume up skipped on $PRIMARY_ROOM (already at maximum $PRIMARY_MAX)"
         else
             if [ "$current_primary" -ge $((PRIMARY_MAX - amount + 1)) ]; then
-                if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/$PRIMARY_MAX" > /dev/null; then
+                if api_request "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/$PRIMARY_MAX" "Volume up on $PRIMARY_ROOM"; then
                     echo "KNOB ACTION COMPLETE - Volume up on $PRIMARY_ROOM (set to maximum $PRIMARY_MAX)"
                 else
                     echo "KNOB ACTION FAILED - Volume up on $PRIMARY_ROOM (API error)"
                 fi
             else
-                if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/+$amount" > /dev/null; then
+                if api_request "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/+$amount" "Volume up on $PRIMARY_ROOM"; then
                     echo "KNOB ACTION COMPLETE - Volume up on $PRIMARY_ROOM (+$amount)"
                 else
                     echo "KNOB ACTION FAILED - Volume up on $PRIMARY_ROOM (API error)"
@@ -378,13 +393,13 @@ volume_up() {{
                 if [ "$current_secondary" -ge "$SECONDARY_MAX" ]; then
                     echo "KNOB ACTION SKIPPED - Volume up skipped on $room (already at maximum $SECONDARY_MAX)"
                 elif [ "$current_secondary" -ge $((SECONDARY_MAX - secondary_amount + 1)) ]; then
-                    (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/volume/$SECONDARY_MAX" > /dev/null; then
+                    (if api_request "$API_BASE/$room_encoded/volume/$SECONDARY_MAX" "Volume up on $room"; then
                         echo "KNOB ACTION COMPLETE - Volume up on $room (set to maximum $SECONDARY_MAX)"
                     else
                         echo "KNOB ACTION FAILED - Volume up on $room (API error)"
                     fi) &
                 else
-                    (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/volume/+$secondary_amount" > /dev/null; then
+                    (if api_request "$API_BASE/$room_encoded/volume/+$secondary_amount" "Volume up on $room"; then
                         echo "KNOB ACTION COMPLETE - Volume up on $room (+$secondary_amount)"
                     else
                         echo "KNOB ACTION FAILED - Volume up on $room (API error)"
@@ -405,7 +420,7 @@ volume_down() {{
     else
         # Calculate actual decrease (don't go below 0)
         local actual_decrease=$((current_primary < amount ? current_primary : amount))
-        if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/-$actual_decrease" > /dev/null; then
+        if api_request "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/-$actual_decrease" "Volume down on $PRIMARY_ROOM"; then
             echo "KNOB ACTION COMPLETE - Volume down on $PRIMARY_ROOM (-$actual_decrease)"
         else
             echo "KNOB ACTION FAILED - Volume down on $PRIMARY_ROOM (API error)"
@@ -420,7 +435,7 @@ volume_down() {{
                 room="${{SECONDARY_ROOMS[$i]}}"
                 room_encoded="${{SECONDARY_ROOMS_ENCODED[$i]}}"
                 if is_room_in_primary_zone "$room"; then
-                    (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/volume/0" > /dev/null; then
+                    (if api_request "$API_BASE/$room_encoded/volume/0" "Silence $room"; then
                         echo "KNOB ACTION COMPLETE - Silence $room ($PRIMARY_ROOM at 0)"
                     else
                         echo "KNOB ACTION FAILED - Silence $room (API error)"
@@ -437,7 +452,7 @@ volume_down() {{
                 room="${{SECONDARY_ROOMS[$i]}}"
                 room_encoded="${{SECONDARY_ROOMS_ENCODED[$i]}}"
                 if is_room_in_primary_zone "$room"; then
-                    (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/volume/-$secondary_amount" > /dev/null; then
+                    (if api_request "$API_BASE/$room_encoded/volume/-$secondary_amount" "Volume down on $room"; then
                         echo "KNOB ACTION COMPLETE - Volume down on $room (-$secondary_amount)"
                     else
                         echo "KNOB ACTION FAILED - Volume down on $room (API error)"
@@ -463,7 +478,7 @@ smart_group() {{
     for i in "${{!SECONDARY_ROOMS[@]}}"; do
         room="${{SECONDARY_ROOMS[$i]}}"
         room_encoded="${{SECONDARY_ROOMS_ENCODED[$i]}}"
-        (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/join/$PRIMARY_ROOM_ENCODED" > /dev/null; then
+        (if api_request "$API_BASE/$room_encoded/join/$PRIMARY_ROOM_ENCODED" "Group $room with $PRIMARY_ROOM"; then
             echo "KEY ACTION COMPLETE - Group $room with $PRIMARY_ROOM"
         else
             echo "KEY ACTION FAILED - Group $room with $PRIMARY_ROOM (API error)"
@@ -474,7 +489,7 @@ smart_group() {{
     
     # Boost primary room if below minimum grouping volume
     if [ "$primary_vol" -lt "$PRIMARY_MIN_GROUPING" ]; then
-        if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/$PRIMARY_MIN_GROUPING" > /dev/null; then
+        if api_request "$API_BASE/$PRIMARY_ROOM_ENCODED/volume/$PRIMARY_MIN_GROUPING" "Boost $PRIMARY_ROOM to minimum grouping volume"; then
             echo "KEY ACTION COMPLETE - Boost $PRIMARY_ROOM to minimum grouping volume ($PRIMARY_MIN_GROUPING)"
         else
             echo "KEY ACTION FAILED - Boost $PRIMARY_ROOM to minimum grouping volume (API error)"
@@ -487,13 +502,13 @@ smart_group() {{
         room_encoded="${{SECONDARY_ROOMS_ENCODED[$i]}}"
         current_vol="${{room_volumes[$room]}}"
         if [ "$current_vol" -lt "$SECONDARY_MIN_GROUPING" ]; then
-            (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/volume/$SECONDARY_MIN_GROUPING" > /dev/null; then
+            (if api_request "$API_BASE/$room_encoded/volume/$SECONDARY_MIN_GROUPING" "Boost $room to minimum grouping volume"; then
                 echo "KEY ACTION COMPLETE - Boost $room to minimum grouping volume ($SECONDARY_MIN_GROUPING)"
             else
                 echo "KEY ACTION FAILED - Boost $room to minimum grouping volume (API error)"
             fi) &
         elif [ "$current_vol" -gt "$SECONDARY_MAX" ]; then
-            (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/volume/$SECONDARY_MAX" > /dev/null; then
+            (if api_request "$API_BASE/$room_encoded/volume/$SECONDARY_MAX" "Reduce $room to maximum volume"; then
                 echo "KEY ACTION COMPLETE - Reduce $room to maximum volume ($SECONDARY_MAX)"
             else
                 echo "KEY ACTION FAILED - Reduce $room to maximum volume (API error)"
@@ -507,7 +522,7 @@ ungroup_all() {{
     for i in "${{!SECONDARY_ROOMS[@]}}"; do
         room="${{SECONDARY_ROOMS[$i]}}"
         room_encoded="${{SECONDARY_ROOMS_ENCODED[$i]}}"
-        (if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$room_encoded/leave" > /dev/null; then
+        (if api_request "$API_BASE/$room_encoded/leave" "Ungroup $room from $PRIMARY_ROOM"; then
             echo "KEY ACTION COMPLETE - Ungroup $room from $PRIMARY_ROOM"
         else
             echo "KEY ACTION FAILED - Ungroup $room from $PRIMARY_ROOM (API error)"
@@ -534,10 +549,12 @@ esac''',
 API_BASE="{api_base}"
 PRIMARY_ROOM="{primary_room}"
 PRIMARY_ROOM_ENCODED="{primary_room_encoded}"
-if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/playpause" > /dev/null; then
+response=$(curl -s -w "\\n%{{http_code}}" --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/playpause")
+http_code=$(echo "$response" | tail -n1)
+if [ "$http_code" = "200" ]; then
     echo "KEY ACTION COMPLETE - Play/pause on $PRIMARY_ROOM"
 else
-    echo "KEY ACTION FAILED - Play/pause on $PRIMARY_ROOM (API error)"
+    echo "KEY ACTION FAILED - Play/pause on $PRIMARY_ROOM (HTTP $http_code)"
 fi''',
 
     # Skips to next track
@@ -546,10 +563,12 @@ fi''',
 API_BASE="{api_base}"
 PRIMARY_ROOM="{primary_room}"
 PRIMARY_ROOM_ENCODED="{primary_room_encoded}"
-if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/next" > /dev/null; then
+response=$(curl -s -w "\\n%{{http_code}}" --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/next")
+http_code=$(echo "$response" | tail -n1)
+if [ "$http_code" = "200" ]; then
     echo "KEY ACTION COMPLETE - Next track on $PRIMARY_ROOM"
 else
-    echo "KEY ACTION FAILED - Next track on $PRIMARY_ROOM (API error)"
+    echo "KEY ACTION FAILED - Next track on $PRIMARY_ROOM (HTTP $http_code)"
 fi''',
 
     # Volume up - calls main volume script with 'up' parameter
@@ -571,10 +590,12 @@ API_BASE="{api_base}"
 PRIMARY_ROOM="{primary_room}"
 PRIMARY_ROOM_ENCODED="{primary_room_encoded}"
 FAVORITE_PLAYLIST="{favorite_playlist}"
-if curl -s --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/favorite/$FAVORITE_PLAYLIST" > /dev/null; then
+response=$(curl -s -w "\\n%{{http_code}}" --connect-timeout {curl_connect_timeout} --max-time {curl_max_time} "$API_BASE/$PRIMARY_ROOM_ENCODED/favorite/$FAVORITE_PLAYLIST")
+http_code=$(echo "$response" | tail -n1)
+if [ "$http_code" = "200" ]; then
     echo "KEY ACTION COMPLETE - Favorite playlist on $PRIMARY_ROOM"
 else
-    echo "KEY ACTION FAILED - Favorite playlist on $PRIMARY_ROOM (API error)"
+    echo "KEY ACTION FAILED - Favorite playlist on $PRIMARY_ROOM (HTTP $http_code)"
 fi'''
 }
 
@@ -587,7 +608,7 @@ Regenerates when config.ini changes or scripts are missing.
 """
 
 def scripts_need_update(config_path, install_dir):
-    # Checks if scripts need regeneration due to config changes or version mismatch
+    # Determines if action scripts require regeneration based on config file modification time and version
     if not config_path.exists():
         return True
     
@@ -630,7 +651,7 @@ def generate_embedded_scripts(config_values, install_dir):
     config_values_with_version['version'] = VERSION
     
     # Check disk space before generating scripts
-    if not check_disk_space(install_dir, 10):  # Need at least 10MB
+    if not check_disk_space(install_dir, 10):  # Require 10MB free space for script generation
         logging.warning("CONFIG - Low disk space, script generation may fail")
     
     try:
@@ -709,7 +730,7 @@ and standard sonos-macropad events (default: sonos-macropad.log).
 """
 
 def setup_config_error_logging():
-    # Logs config errors that users need to fix - only creates file when errors occur
+    # Creates configuration error logger with file handler on first error
     config_logger = logging.getLogger('config_errors')
     config_logger.setLevel(logging.ERROR)
     config_logger.propagate = False  # Prevent propagation to root logger
@@ -777,25 +798,27 @@ def validate_host(host):
     if not host or not isinstance(host, str):
         return False
         
-    # Check for valid IP address format - validates each octet is 0-255
+    # Validate IP address format and check each octet is 0-255
     ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
     if re.match(ip_pattern, host):
         try:
             parts = host.split('.')
+            if len(parts) != 4:  # Validate IP has exactly 4 octets (prevents incomplete IPs like '192.168.1')
+                return False
             if not all(0 <= int(part) <= 255 for part in parts):
                 return False
             return True  # Valid IP format
         except ValueError:
             return False
     else:
-        # Check for valid hostname format (RFC 1123) - allows letters, numbers, dots, hyphens
+        # Validate hostname format per RFC 1123 (letters, numbers, dots, hyphens)
         if len(host) > 253:  # Hostname too long
             return False
         hostname_pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
         return re.match(hostname_pattern, host) is not None
 
 def validate_port(port_str):
-    # Check port range (1-65535) - excludes port 0 which is reserved
+    # Validate port is in range 1-65535 (port 0 is reserved)
     try:
         port = int(port_str)
         is_valid = 1 <= port <= 65535
@@ -804,7 +827,7 @@ def validate_port(port_str):
         return False
 
 def get_available_devices():
-    # Scan /dev/input for available devices - used for device validation and suggestions
+    # Enumerate available input devices from /dev/input for validation and suggestions
     # Implementation: Use evdev.list_devices() to enumerate paths, create InputDevice for each, extract name attribute, close devices after reading, handle exceptions gracefully
     try:
         devices = []
@@ -820,7 +843,7 @@ def get_available_devices():
         return []
 
 def get_available_playlists(api_base):
-    # Fetches playlists from Sonos API with 3 second timeout - filters to Spotify/streaming only
+    # Retrieve playlists from Sonos API with timeout, filtering to Spotify/streaming services
     try:
         start_time = time.time()
         result = subprocess.run(
@@ -848,7 +871,7 @@ def get_available_playlists(api_base):
         return []
 
 def get_available_rooms(api_base):
-    # Fetches room names from Sonos /zones API with 3 second timeout
+    # Retrieve room names from Sonos /zones API with connection timeout
     try:
         start_time = time.time()
         result = subprocess.run(
@@ -872,7 +895,7 @@ def get_available_rooms(api_base):
         return []
 
 def test_device_exists(device_name):
-    # Validates device exists, is readable, and supports required keys (Q,W,E,R,T)
+    # Verify device exists, is accessible, and supports required keys (Q,W,E,R,T)
     # Returns (bool, suggestions_list) - filters out audio/video hardware
     available_devices = get_available_devices()
     
@@ -957,7 +980,7 @@ try:
     if not config_path.exists():
         log_config_error(config_logger, 
                         "config.ini file not found in script directory",
-                        "Create config.ini file in same directory as sonos-macropad.py. For more information, see docs/SETUP.md")
+                        "Create config.ini file in same directory as sonos-macropad.py. For example, copy from docs/config.ini.example or see docs/SETUP.md")
         print("Configuration error: config.ini file not found - check sonos-macropad.config-errors.log")
         exit(1)
     
@@ -970,7 +993,7 @@ try:
             if not config.has_section(section):
                 log_config_error(config_logger, 
                                 f"[{section}] section is missing from config.ini",
-                                f"Add [{section}] section header to config.ini. For more information, see docs/SETUP.md")
+                                f"Edit config.ini and add [{section}] section header. For example: [{section}] (see docs/SETUP.md)")
                 print(f"Configuration error: Missing section [{section}] - check sonos-macropad.config-errors.log")
                 exit(1)
     else:
@@ -990,7 +1013,7 @@ try:
                 if not config.has_option(section, option):
                     log_config_error(config_logger, 
                                     f"Required option '{option}' is missing from [{section}] section in config.ini",
-                                    f"Add '{option} = value' to [{section}] section. For more information, see docs/SETUP.md")
+                                    f"Edit config.ini and add '{option} = value' to [{section}] section. For example: {option} = example_value (see docs/SETUP.md)")
                     print(f"Configuration error: Missing option {section}.{option} - check sonos-macropad.config-errors.log")
                     exit(1)
     else:
@@ -1001,6 +1024,8 @@ try:
     INSTALL_DIR = config.get('macropad', 'install_dir').strip()
     LOG_FILE_NAME = config.get('macropad', 'log_file').strip()
     DEVICE_NAME = config.get('macropad', 'device_name').strip()
+
+
     
     # Validate log file and install directory paths
     if not LOG_FILE_NAME:
@@ -1016,7 +1041,7 @@ try:
         if any(char in LOG_FILE_NAME for char in invalid_chars):
             log_config_error(config_logger, 
                             f"log_file in config.ini contains invalid characters: log_file = {LOG_FILE_NAME}",
-                            "Edit config.ini and remove invalid characters from log_file name.")
+                            "Edit config.ini and remove invalid characters from log_file name. For example: log_file = sonos-macropad.log")
             print(f"Configuration error: Invalid 'log_file' '{LOG_FILE_NAME}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
@@ -1027,20 +1052,20 @@ try:
             if not os.path.isdir(log_dir):
                 log_config_error(config_logger, 
                                 f"log_file in config.ini has directory that does not exist: {log_dir}",
-                                f"Create the directory: mkdir -p {log_dir} or use a relative path: log_file = sonos-macropad.log")
+                                f"Edit config.ini to use relative path (log_file = sonos-macropad.log) or create directory: mkdir -p {log_dir}")
                 print(f"Configuration error: Invalid 'log_file' '{LOG_FILE_NAME}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
                 exit(1)
             if not os.access(log_dir, os.W_OK):
                 log_config_error(config_logger, 
                                 f"log_file in config.ini has directory that is not writable: {log_dir}",
-                                f"Fix directory permissions: chmod 755 {log_dir}")
+                                f"Edit config.ini to use different directory or fix permissions: chmod 755 {log_dir}")
                 print(f"Configuration error: Invalid 'log_file' '{LOG_FILE_NAME}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
                 exit(1)
     else:
         pass  # Skipped validation
         logging.warning("CONFIG - Skipping log file path validation")
     
-    # Check install directory - must exist and be writable for script generation
+    # Validate install directory exists and is writable for script generation
     if not INSTALL_DIR:
         log_config_error(config_logger, 
                         "install_dir in config.ini is empty: install_dir = ''",
@@ -1058,13 +1083,13 @@ try:
         elif not os.path.isdir(INSTALL_DIR):
             log_config_error(config_logger, 
                             f"install_dir in config.ini does not exist: install_dir = {INSTALL_DIR}",
-                            f"Create the directory: mkdir -p {INSTALL_DIR}")
+                            f"Edit config.ini to use existing directory or create it: mkdir -p {INSTALL_DIR}")
             print(f"Configuration error: Invalid 'install_dir' '{INSTALL_DIR}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         elif not os.access(INSTALL_DIR, os.W_OK):
             log_config_error(config_logger, 
                             f"install_dir in config.ini is not writable: install_dir = {INSTALL_DIR}",
-                            f"Fix directory permissions: chmod 755 {INSTALL_DIR}")
+                            f"Edit config.ini to use different directory or fix permissions: chmod 755 {INSTALL_DIR}")
             print(f"Configuration error: Invalid 'install_dir' '{INSTALL_DIR}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
@@ -1086,8 +1111,8 @@ try:
     API_HOST = config.get('sonos', 'api_host').strip()
     if not SKIP_HOST and not validate_host(API_HOST):
         log_config_error(config_logger, 
-                        f"api_host in config.ini failed validation: api_host = {API_HOST}",
-                        f"Check that the host format is valid and the host is reachable. For example (IP address): api_host = 192.168.1.100 or (hostname): api_host = sonos-api.local")
+                        f"api_host in config.ini has invalid format: api_host = {API_HOST}",
+                        f"Must be valid IP address (192.168.1.100) or RFC 1123 hostname (sonos-api.local). Check format - connectivity is not tested during validation.")
         logging.error("CONFIG - Failed config.ini validation - check sonos-macropad.config-errors.log")
         print(f"Configuration error: Invalid 'api_host' '{API_HOST}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
@@ -1099,7 +1124,7 @@ try:
     if not SKIP_PORT and not validate_port(API_PORT):
         log_config_error(config_logger, 
                         f"api_port in config.ini is not a valid port number: api_port = {API_PORT}",
-                        f"Edit config.ini and enter a valid port number. For example: api_port = 5005")
+                        f"Must be integer between 1-65535 (port 0 is reserved). For example: api_port = 5005")
         logging.error("CONFIG - Failed config.ini validation - check sonos-macropad.config-errors.log")
         print(f"Configuration error: Invalid 'api_port' '{API_PORT}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
@@ -1119,13 +1144,13 @@ try:
             if result.returncode != 0:
                 log_config_error(config_logger, 
                                 f"Cannot connect to Sonos HTTP API at {API_BASE}",
-                                f"Verify Sonos HTTP API is running at {API_BASE}")
+                                f"Edit config.ini with correct API settings or verify Sonos HTTP API is running at {API_BASE}")
                 print(f"Configuration error: Cannot connect to Sonos API at {API_BASE} - For more information, see: sonos-macropad.config-errors.log")
                 exit(1)
         except Exception as e:
             log_config_error(config_logger, 
                             f"Cannot connect to Sonos HTTP API at {API_BASE}: {e}",
-                            f"Verify Sonos HTTP API is running at {API_BASE}")
+                            f"Edit config.ini with correct API settings or verify Sonos HTTP API is running at {API_BASE}")
             print(f"Configuration error: Cannot connect to Sonos API at {API_BASE} - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
@@ -1136,7 +1161,7 @@ try:
     if not PRIMARY_ROOM:
         log_config_error(config_logger, 
                         f"primary_room in config.ini is empty: primary_room = '{PRIMARY_ROOM}'",
-                        "Edit config.ini and enter a room name from your Sonos app.")
+                        "Edit config.ini and enter a room name from your Sonos app. For example: primary_room = Living Room")
         print(f"Configuration error: Invalid 'primary_room' '{PRIMARY_ROOM}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
     
@@ -1154,7 +1179,7 @@ try:
         else:
             log_config_error(config_logger, 
                             f"Cannot get room list from Sonos API at {API_BASE}",
-                            f"Check Sonos HTTP API functionality")
+                            "Edit config.ini with correct API settings or check Sonos HTTP API functionality")
             print(f"Configuration error: Cannot get room list from Sonos API - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
@@ -1167,7 +1192,7 @@ try:
     if not secondary_rooms_raw:
         log_config_error(config_logger, 
                         f"secondary_rooms in config.ini is empty: secondary_rooms = {secondary_rooms_raw}",
-                        "Edit config.ini and enter comma-separated room names.")
+                        "Edit config.ini and enter comma-separated room names. For example: secondary_rooms = Kitchen,Bedroom")
         print(f"Configuration error: Invalid 'secondary_rooms' '{secondary_rooms_raw}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
     
@@ -1175,7 +1200,7 @@ try:
     if not SECONDARY_ROOMS:
         log_config_error(config_logger, 
                         f"secondary_rooms in config.ini contains no valid room names: secondary_rooms = {secondary_rooms_raw}",
-                        "Edit config.ini and enter valid room names.")
+                        "Edit config.ini and enter valid room names. For example: secondary_rooms = Kitchen,Bedroom")
         print(f"Configuration error: Invalid 'secondary_rooms' '{secondary_rooms_raw}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
     
@@ -1196,7 +1221,7 @@ try:
         else:
             log_config_error(config_logger, 
                             f"Cannot validate secondary_rooms - Sonos HTTP API connection failed at {API_BASE}",
-                            f"Verify Sonos HTTP API is running at {API_BASE}")
+                            f"Edit config.ini with correct API settings or verify Sonos HTTP API is running at {API_BASE}")
             print(f"Configuration error: Cannot connect to Sonos API at {API_BASE} - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
@@ -1205,7 +1230,7 @@ try:
     # Make sure primary room isn't listed in secondary rooms - prevents logical conflicts
     if not SKIP_ROOMS_LOGIC and PRIMARY_ROOM in SECONDARY_ROOMS:
         log_config_error(config_logger, 
-                        f"primary_room '{PRIMARY_ROOM}' cannot be in secondary_rooms list",
+                        f"primary_room in config.ini cannot be in secondary_rooms list: primary_room = {PRIMARY_ROOM}",
                         f"Edit config.ini and remove '{PRIMARY_ROOM}' from secondary_rooms. Secondary rooms should be different from primary room.")
         print(f"Configuration error: Invalid 'secondary_rooms' '{secondary_rooms_raw}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
@@ -1215,7 +1240,7 @@ try:
         if len(SECONDARY_ROOMS) != len(set(SECONDARY_ROOMS)):
             duplicates = [room for room in set(SECONDARY_ROOMS) if SECONDARY_ROOMS.count(room) > 1]
             log_config_error(config_logger, 
-                            f"secondary_rooms contains one or more duplicate room names: {', '.join(duplicates)}",
+                            f"secondary_rooms in config.ini contains duplicate room names: {', '.join(duplicates)}",
                             f"Edit config.ini and remove duplicate room names from secondary_rooms.")
             print(f"Configuration error: Invalid 'secondary_rooms' '{secondary_rooms_raw}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
@@ -1229,7 +1254,7 @@ try:
     if not FAVORITE_PLAYLIST:
         log_config_error(config_logger, 
                         "favorite_playlist in config.ini is empty: favorite_playlist = ''",
-                        "Edit config.ini and enter a playlist name.")
+                        "Edit config.ini and enter a playlist name. For example: favorite_playlist = My Playlist")
         print(f"Configuration error: Invalid 'favorite_playlist' '' in config.ini - For more information, see: sonos-macropad.config-errors.log")
         exit(1)
     
@@ -1248,36 +1273,47 @@ try:
         else:
             log_config_error(config_logger, 
                             f"Cannot get playlist list from Sonos API at {API_BASE}",
-                            f"Check Sonos HTTP API functionality")
+                            "Edit config.ini with correct API settings or check Sonos HTTP API functionality")
             print(f"Configuration error: Cannot get playlist list from Sonos API - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
         pass  # Skipped validation
     
-    # Check device name and validate it exists
+    # Check device name format and validate it exists
+    device_name = config.get('macropad', 'device_name', fallback=None)
+    if not device_name:
+        log_config_error(config_logger, 
+                        "device_name not specified in config.ini",
+                        "Add 'device_name' to the [macropad] section of config.ini. For example: device_name = DOIO_KB03B")
+        print("Configuration error: device_name not specified in config.ini - check sonos-macropad.config-errors.log")
+        exit(1)
+    
+    # Validate device name contains only safe characters
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', device_name):
+        log_config_error(config_logger, 
+                        f"device_name in config.ini contains invalid characters: device_name = {device_name}",
+                        "Must match pattern ^[a-zA-Z0-9_.-]+$ (letters, numbers, underscores, dots, hyphens only). For example: device_name = DOIO_KB03B")
+        print(f"Configuration error: Invalid 'device_name' '{device_name}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
+        exit(1)
+    
+    # Validate device exists and is accessible
     if not SKIP_DEVICE:
-        device_name = config.get('macropad', 'device_name', fallback=None)
-        if device_name:
-            device_exists, suggestions = test_device_exists(device_name)
-            if not device_exists:
-                log_config_error(config_logger, 
-                                f"Device '{device_name}' not found",
-                                f"Check that the device is connected and properly named. Suggestions: {', '.join(suggestions) if suggestions else 'None'}")
-                print(f"Configuration error: Device '{device_name}' not found - check sonos-macropad.config-errors.log")
-                exit(1)
-        else:
+        device_exists, suggestions = test_device_exists(device_name)
+        if not device_exists:
             log_config_error(config_logger, 
-                            "device_name not specified in config.ini",
-                            "Add 'device_name' to the [macropad] section of config.ini")
-            print("Configuration error: device_name not specified in config.ini - check sonos-macropad.config-errors.log")
+                            f"device_name in config.ini not found: device_name = {device_name}",
+                            f"Edit config.ini with correct device name or check device connection. Suggestions: {', '.join(suggestions) if suggestions else 'None'}")
+            print(f"Configuration error: Invalid 'device_name' '{device_name}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
         pass  # Skipped validation
 
-    # Extract all configuration values needed for the script to function
+    # Extract configuration values from validated config file
     INSTALL_DIR = config.get('macropad', 'install_dir').strip()
     LOG_FILE_NAME = config.get('macropad', 'log_file').strip()
     DEVICE_NAME = config.get('macropad', 'device_name').strip()
+
+
     
     # Validate log file and install directory paths
     if not LOG_FILE_NAME:
@@ -1293,7 +1329,7 @@ try:
         if any(char in LOG_FILE_NAME for char in invalid_chars):
             log_config_error(config_logger, 
                             f"log_file in config.ini contains invalid characters: log_file = {LOG_FILE_NAME}",
-                            "Edit config.ini and remove invalid characters from log_file name.")
+                            "Edit config.ini and remove invalid characters from log_file name. For example: log_file = sonos-macropad.log")
             print(f"Configuration error: Invalid 'log_file' '{LOG_FILE_NAME}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
@@ -1304,20 +1340,20 @@ try:
             if not os.path.isdir(log_dir):
                 log_config_error(config_logger, 
                                 f"log_file in config.ini has directory that does not exist: {log_dir}",
-                                f"Create the directory: mkdir -p {log_dir} or use a relative path: log_file = sonos-macropad.log")
+                                f"Edit config.ini to use relative path (log_file = sonos-macropad.log) or create directory: mkdir -p {log_dir}")
                 print(f"Configuration error: Invalid 'log_file' '{LOG_FILE_NAME}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
                 exit(1)
             if not os.access(log_dir, os.W_OK):
                 log_config_error(config_logger, 
                                 f"log_file in config.ini has directory that is not writable: {log_dir}",
-                                f"Fix directory permissions: chmod 755 {log_dir}")
+                                f"Edit config.ini to use different directory or fix permissions: chmod 755 {log_dir}")
                 print(f"Configuration error: Invalid 'log_file' '{LOG_FILE_NAME}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
                 exit(1)
     else:
         pass  # Skipped validation
         logging.warning("CONFIG - Skipping log file path validation")
     
-    # Check install directory - must exist and be writable for script generation
+    # Validate install directory exists and is writable for script generation
     if not INSTALL_DIR:
         log_config_error(config_logger, 
                         "install_dir in config.ini is empty: install_dir = ''",
@@ -1335,13 +1371,13 @@ try:
         elif not os.path.isdir(INSTALL_DIR):
             log_config_error(config_logger, 
                             f"install_dir in config.ini does not exist: install_dir = {INSTALL_DIR}",
-                            f"Create the directory: mkdir -p {INSTALL_DIR}")
+                            f"Edit config.ini to use existing directory or create it: mkdir -p {INSTALL_DIR}")
             print(f"Configuration error: Invalid 'install_dir' '{INSTALL_DIR}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         elif not os.access(INSTALL_DIR, os.W_OK):
             log_config_error(config_logger, 
                             f"install_dir in config.ini is not writable: install_dir = {INSTALL_DIR}",
-                            f"Fix directory permissions: chmod 755 {INSTALL_DIR}")
+                            f"Edit config.ini to use different directory or fix permissions: chmod 755 {INSTALL_DIR}")
             print(f"Configuration error: Invalid 'install_dir' '{INSTALL_DIR}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
     else:
@@ -1375,42 +1411,42 @@ try:
         if not (1 <= PRIMARY_STEP <= 10):
             log_config_error(config_logger, 
                             f"primary_single_step in config.ini not in valid range: primary_single_step = {PRIMARY_STEP}",
-                            f"Edit config.ini and enter a value between 1-10. For example: primary_single_step = 3")
+                            f"Must be integer 1-10 (reasonable volume increment for Sonos 0-100 range). For example: primary_single_step = 3")
             print(f"Configuration error: Invalid 'primary_single_step' '{PRIMARY_STEP}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if not (1 <= PRIMARY_MAX <= 100):
             log_config_error(config_logger, 
                             f"primary_max in config.ini not in valid range: primary_max = {PRIMARY_MAX}",
-                            f"Edit config.ini and enter a value between 1-100. For example: primary_max = 42")
+                            f"Must be integer 1-100 (Sonos volume range). For example: primary_max = 50")
             print(f"Configuration error: Invalid 'primary_max' '{PRIMARY_MAX}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if not (1 <= PRIMARY_MIN_GROUPING <= 50):
             log_config_error(config_logger, 
                             f"primary_min_grouping in config.ini not in valid range: primary_min_grouping = {PRIMARY_MIN_GROUPING}",
-                            f"Edit config.ini and enter a value between 1-50. For example: primary_min_grouping = 10")
+                            f"Must be integer 1-50 (reasonable minimum for multi-room audio). For example: primary_min_grouping = 10")
             print(f"Configuration error: Invalid 'primary_min_grouping' '{PRIMARY_MIN_GROUPING}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if not (1 <= SECONDARY_STEP <= 5):
             log_config_error(config_logger, 
                             f"secondary_step in config.ini not in valid range: secondary_step = {SECONDARY_STEP}",
-                            f"Edit config.ini and enter a value between 1-5. For example: secondary_step = 1")
+                            f"Must be integer 1-5 (smaller increments for secondary rooms). For example: secondary_step = 2")
             print(f"Configuration error: Invalid 'secondary_step' '{SECONDARY_STEP}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if not (1 <= SECONDARY_MAX <= 100):
             log_config_error(config_logger, 
                             f"secondary_max in config.ini not in valid range: secondary_max = {SECONDARY_MAX}",
-                            f"Edit config.ini and enter a value between 1-100. For example: secondary_max = 30")
+                            f"Must be integer 1-100 (Sonos volume range, typically lower than primary). For example: secondary_max = 40")
             print(f"Configuration error: Invalid 'secondary_max' '{SECONDARY_MAX}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if not (1 <= SECONDARY_MIN_GROUPING <= 20):
             log_config_error(config_logger, 
                             f"secondary_min_grouping in config.ini not in valid range: secondary_min_grouping = {SECONDARY_MIN_GROUPING}",
-                            f"Edit config.ini and enter a value between 1-20. For example: secondary_min_grouping = 6")
+                            f"Must be integer 1-20 (reasonable minimum for secondary rooms). For example: secondary_min_grouping = 8")
             print(f"Configuration error: Invalid 'secondary_min_grouping' '{SECONDARY_MIN_GROUPING}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
@@ -1418,35 +1454,35 @@ try:
         if PRIMARY_STEP >= PRIMARY_MAX:
             log_config_error(config_logger, 
                             f"primary_single_step in config.ini must be less than primary_max: primary_single_step = {PRIMARY_STEP}, primary_max = {PRIMARY_MAX}",
-                            f"Edit config.ini so primary_single_step is less than primary_max. For example: primary_single_step = {min(PRIMARY_MAX - 1, 5)}")
+                            "primary_single_step must be less than primary_max to allow volume increases. Reduce step size or increase max volume.")
             print(f"Configuration error: Invalid 'primary_single_step' '{PRIMARY_STEP}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if PRIMARY_MIN_GROUPING >= PRIMARY_MAX:
             log_config_error(config_logger, 
                             f"primary_min_grouping in config.ini must be less than primary_max: primary_min_grouping = {PRIMARY_MIN_GROUPING}, primary_max = {PRIMARY_MAX}",
-                            f"Edit config.ini so primary_min_grouping is less than primary_max. For example: primary_min_grouping = {min(PRIMARY_MAX - 1, 10)}")
+                            "primary_min_grouping must be less than primary_max for valid grouping behavior. Reduce min grouping or increase max volume.")
             print(f"Configuration error: Invalid 'primary_min_grouping' '{PRIMARY_MIN_GROUPING}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if SECONDARY_STEP >= SECONDARY_MAX:
             log_config_error(config_logger, 
                             f"secondary_step in config.ini must be less than secondary_max: secondary_step = {SECONDARY_STEP}, secondary_max = {SECONDARY_MAX}",
-                            f"Edit config.ini so secondary_step is less than secondary_max. For example: secondary_step = {min(SECONDARY_MAX - 1, 3)}")
+                            "secondary_step must be less than secondary_max to allow volume increases. Reduce step size or increase max volume.")
             print(f"Configuration error: Invalid 'secondary_step' '{SECONDARY_STEP}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if SECONDARY_MIN_GROUPING >= SECONDARY_MAX:
             log_config_error(config_logger, 
                             f"secondary_min_grouping in config.ini must be less than secondary_max: secondary_min_grouping = {SECONDARY_MIN_GROUPING}, secondary_max = {SECONDARY_MAX}",
-                            f"Edit config.ini so secondary_min_grouping is less than secondary_max. For example: secondary_min_grouping = {min(SECONDARY_MAX - 1, 6)}")
+                            "secondary_min_grouping must be less than secondary_max for valid grouping behavior. Reduce min grouping or increase max volume.")
             print(f"Configuration error: Invalid 'secondary_min_grouping' '{SECONDARY_MIN_GROUPING}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
         if SECONDARY_MAX > PRIMARY_MAX:
             log_config_error(config_logger, 
                             f"secondary_max in config.ini cannot exceed primary_max: secondary_max = {SECONDARY_MAX}, primary_max = {PRIMARY_MAX}",
-                            f"Edit config.ini so secondary_max is less than primary_max: secondary_max = {PRIMARY_MAX - 1} or equal to primary_max: secondary_max = {PRIMARY_MAX}")
+                            "secondary_max cannot exceed primary_max (secondary rooms should not be louder than primary). Reduce secondary_max or increase primary_max.")
             print(f"Configuration error: Invalid 'secondary_max' '{SECONDARY_MAX}' in config.ini - For more information, see: sonos-macropad.config-errors.log")
             exit(1)
         
@@ -1455,7 +1491,7 @@ try:
     if not all([INSTALL_DIR, LOG_FILE_NAME, DEVICE_NAME, PRIMARY_STEP, PRIMARY_MAX, PRIMARY_MIN_GROUPING, SECONDARY_STEP, SECONDARY_MAX, SECONDARY_MIN_GROUPING]):
         log_config_error(config_logger, 
                         "Missing required configuration values",
-                        "Check that all required configuration values are present in config.ini")
+                        "Edit config.ini and ensure all required configuration values are present")
         print("Configuration error: Missing required configuration values - check sonos-macropad.config-errors.log")
         exit(1)
 
@@ -1480,14 +1516,14 @@ try:
             'bash_log_format': ''  # Removed - no longer used in templates
         }
         
-        if SKIP_SCRIPTS_CHECK or scripts_need_update(config_path, INSTALL_DIR):
+        if not SKIP_SCRIPTS_CHECK and scripts_need_update(config_path, INSTALL_DIR):
             SCRIPTS_GENERATED = True
             try:
                 generate_embedded_scripts(config_values, INSTALL_DIR)
             except Exception as e:
                 log_config_error(config_logger, 
-                                f"Script generation failed: {e}",
-                                f"Check install directory permissions and disk space: {INSTALL_DIR}")
+                                f"Action script generation failed: {e}",
+                                f"Edit config.ini with different directory or check permissions and disk space: {INSTALL_DIR}")
                 print(f"Configuration error: Script generation failed - check sonos-macropad.config-errors.log")
                 exit(1)
         else:
@@ -1499,9 +1535,9 @@ try:
 
 except Exception as e:
     log_config_error(config_logger, 
-                    f"Configuration validation failed: {e}",
-                    "Check config.ini settings and fix any validation errors")
-    print(f"Configuration validation failed: {e}")
+                    f"config.ini validation failed: {e}",
+                    "Edit config.ini settings and fix any validation errors")
+    print(f"config.ini validation failed: {e}")
     exit(1)
 
 """
@@ -1554,9 +1590,8 @@ def find_doio_device(device_name):
             if dev and (not hasattr(dev, 'name') or dev.name != device_name):
                 try:
                     dev.close()
-                except:
-                    pass
-                    pass
+                except (OSError, AttributeError) as e:
+                    pass  # Device already closed or invalid
     return None
 
 def find_device_with_retry(device_name, max_retries=None, cycle_number=1):
@@ -1744,7 +1779,7 @@ class VolumeAccumulator:
             if self.pending_up > 0:
                 # Log summary only if multiple turns
                 if self.turn_count > 1:
-                    # TODO: Fix hardcoded KEY_T - should use actual keycode from add_turn(keycode)
+                    # Log volume up burst with actual keycode (always KEY_T for up direction)
                     logging.info(f"KNOB TURN - {self.turn_count} knob turns detected (KEY_T)")
                 try:
                     volume_queue.put(('KEY_T', self.pending_up), block=False)
@@ -1755,7 +1790,7 @@ class VolumeAccumulator:
             elif self.pending_down > 0:
                 # Log summary only if multiple turns
                 if self.turn_count > 1:
-                    # TODO: Fix hardcoded KEY_R - should use actual keycode from add_turn(keycode)
+                    # Log volume down burst with actual keycode (always KEY_R for down direction)
                     logging.info(f"KNOB TURN - {self.turn_count} knob turns detected (KEY_R)")
                 try:
                     volume_queue.put(('KEY_R', self.pending_down), block=False)
@@ -1786,11 +1821,24 @@ def volume_worker():
             start_time = time.time()
             try:
                 if keycode == 'KEY_T':
-                    result = subprocess.run([f"{os.path.join(INSTALL_DIR, 'groups-and-volume')} up {total_change}"], shell=True, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
+                    # Sanitize script path and change arguments to separated components to prevent command injection
+                    script_path = os.path.join(INSTALL_DIR, 'groups-and-volume')
+                    result = subprocess.run([script_path, 'up', str(total_change)], shell=False, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
                 elif keycode == 'KEY_R':
-                    result = subprocess.run([f"{os.path.join(INSTALL_DIR, 'groups-and-volume')} down {total_change}"], shell=True, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
+                    # Sanitize script path and change arguments to separated components to prevent command injection
+                    script_path = os.path.join(INSTALL_DIR, 'groups-and-volume')
+                    result = subprocess.run([script_path, 'down', str(total_change)], shell=False, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
                 else:
-                    result = subprocess.run([SCRIPTS[keycode]], shell=True, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
+                    # Already safe since SCRIPTS are pre-defined and sanitized paths
+                    script_path = SCRIPTS[keycode]
+                    if not os.path.isabs(script_path):
+                        script_path = os.path.abspath(script_path)
+                    # Validate that path is within expected directory (secure against path traversal)
+                    real_script = os.path.realpath(script_path)
+                    real_install = os.path.realpath(INSTALL_DIR)
+                    if not real_script.startswith(real_install + os.sep):
+                        raise ValueError(f"Script path {script_path} is outside of allowed directory")
+                    result = subprocess.run([script_path], shell=False, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
                 exit_code = result.returncode
                 
                 # Script output logged automatically by tracer
@@ -1799,7 +1847,21 @@ def volume_worker():
             duration = time.time() - start_time
             
             if exit_code != 0:
-                logging.warning(f"KNOB ACTION FAILED - {action_name} (exit: {exit_code}, {duration:.2f}s)")
+                # Parse HTTP error codes from script stderr output
+                http_error = None
+                if result.stderr:
+                    import re
+                    # Look for HTTP error codes in stderr: "description (HTTP 404)"
+                    http_match = re.search(r'\(HTTP (\d+)\)', result.stderr)
+                    if http_match:
+                        http_error = http_match.group(1)
+                
+                if http_error:
+                    logging.warning(f"KNOB ACTION FAILED - {action_name} (HTTP {http_error}, {duration:.2f}s)")
+                elif exit_code == 124:
+                    logging.warning(f"KNOB ACTION FAILED - {action_name} (timeout: {SCRIPT_TIMEOUT}s, {duration:.2f}s)")
+                else:
+                    logging.warning(f"KNOB ACTION FAILED - {action_name} (exit: {exit_code}, {duration:.2f}s)")
             else:
                 # Parse actual volume changes from script output
                 if keycode in ['KEY_T', 'KEY_R']:
@@ -1886,7 +1948,14 @@ def key_worker():
             
             start_time = time.time()
             try:
-                result = subprocess.run([SCRIPTS[keycode]], shell=True, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
+                # Use shell=False for security - script paths are pre-validated
+                script_path = SCRIPTS[keycode]
+                if not os.path.isabs(script_path):
+                    script_path = os.path.abspath(script_path)
+                # Validate that path is within expected directory
+                if not script_path.startswith(INSTALL_DIR):
+                    raise ValueError(f"Script path {script_path} is outside of allowed directory")
+                result = subprocess.run([script_path], shell=False, timeout=SCRIPT_TIMEOUT, capture_output=True, text=True)
                 exit_code = result.returncode
                 
                 # Script output logged automatically by tracer
@@ -1895,7 +1964,21 @@ def key_worker():
             duration = time.time() - start_time
             
             if exit_code != 0:
-                logging.warning(f"KEY ACTION FAILED - {action_name} (exit: {exit_code}, {duration:.2f}s)")
+                # Parse HTTP error codes from script stderr output
+                http_error = None
+                if result.stderr:
+                    import re
+                    # Look for HTTP error codes in stderr: "description (HTTP 404)"
+                    http_match = re.search(r'\(HTTP (\d+)\)', result.stderr)
+                    if http_match:
+                        http_error = http_match.group(1)
+                
+                if http_error:
+                    logging.warning(f"KEY ACTION FAILED - {action_name} (HTTP {http_error}, {duration:.2f}s)")
+                elif exit_code == 124:
+                    logging.warning(f"KEY ACTION FAILED - {action_name} (timeout: {SCRIPT_TIMEOUT}s, {duration:.2f}s)")
+                else:
+                    logging.warning(f"KEY ACTION FAILED - {action_name} (exit: {exit_code}, {duration:.2f}s)")
             else:
                 # Always use our duration-enhanced completion messages
                 if keycode == 'KEY_Q':
@@ -2044,11 +2127,19 @@ def main():
                                     exit_code = result.returncode
                                 except subprocess.TimeoutExpired:
                                     exit_code = 124
+                                    result = None
                                 duration = time.time() - start_time
                                 if exit_code != 0:
-                                    logging.warning(f"KEY ACTION FAILED - Group {secondary_rooms_str} (exit: {exit_code}, {duration:.2f}s)")
+                                    # Parse HTTP error code from stderr if available
+                                    error_msg = f"Group {secondary_rooms_str}"
+                                    if result and result.stderr and "HTTP" in result.stderr:
+                                        error_msg += f" ({result.stderr.strip()}, {duration:.2f}s)"
+                                    elif exit_code == 124:
+                                        error_msg += f" (timeout: {GROUP_SCRIPT_TIMEOUT}s, {duration:.2f}s)"
+                                    else:
+                                        error_msg += f" (exit: {exit_code}, {duration:.2f}s)"
+                                    logging.warning(f"KEY ACTION FAILED - {error_msg}")
                                 else:
-                                    # Always use our duration-enhanced completion message
                                     logging.info(f"KEY ACTION COMPLETE - Group {secondary_rooms_str} ({duration:.2f}s)")
                                 q_press_times.clear()
                             elif len(q_press_times) == 1:
@@ -2075,11 +2166,19 @@ def main():
                                     exit_code = result.returncode
                                 except subprocess.TimeoutExpired:
                                     exit_code = 124
+                                    result = None
                                 duration = time.time() - start_time
                                 if exit_code != 0:
-                                    logging.warning(f"KEY ACTION FAILED - Ungroup {secondary_rooms_str} (exit: {exit_code}, {duration:.2f}s)")
+                                    # Parse HTTP error code from stderr if available
+                                    error_msg = f"Ungroup {secondary_rooms_str}"
+                                    if result and result.stderr and "HTTP" in result.stderr:
+                                        error_msg += f" ({result.stderr.strip()}, {duration:.2f}s)"
+                                    elif exit_code == 124:
+                                        error_msg += f" (timeout: {GROUP_SCRIPT_TIMEOUT}s, {duration:.2f}s)"
+                                    else:
+                                        error_msg += f" (exit: {exit_code}, {duration:.2f}s)"
+                                    logging.warning(f"KEY ACTION FAILED - {error_msg}")
                                 else:
-                                    # Always use our duration-enhanced completion message
                                     logging.info(f"KEY ACTION COMPLETE - Ungroup {secondary_rooms_str} ({duration:.2f}s)")
                                 w_press_times.clear()
                             elif len(w_press_times) == 1:
@@ -2107,8 +2206,8 @@ def main():
         finally:
             try:
                 dev.close()
-            except:
-                    pass
+            except (OSError, AttributeError):
+                    pass  # Device already closed or invalid
     
     logging.info("SONOS-MACROPAD STOPPED - Controller shutdown complete")
 

@@ -191,4 +191,4 @@ And to [vinylemulator](https://github.com/hankhank10/vinylemulator) for the grea
 
 This is a personal project and is not affiliated with or endorsed by Sonos, Inc.
 
-**Version:** 2026.1.8
+**Version:** 2026.1.9
